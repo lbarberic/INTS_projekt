@@ -1,0 +1,6 @@
+﻿<StaticWebAssets Version="1.0">
+  <ContentRoot BasePath="/" Path="C:\Users\Luka\Desktop\MovieRecommender\MovieRecommender\bin\Debug\net5.0\wwwroot\" />
+  <ContentRoot BasePath="/" Path="C:\Users\Luka\Desktop\MovieRecommender\MovieRecommender\obj\Debug\net5.0\scopedcss\bundle\" />
+  <ContentRoot BasePath="_content/Blazored.Typeahead" Path="C:\Users\Luka\.nuget\packages\blazored.typeahead\4.6.0\build\..\staticwebassets\" />
+  <ContentRoot BasePath="_content/Syncfusion.Blazor" Path="C:\Users\Luka\.nuget\packages\syncfusion.blazor\19.2.0.56\build\..\staticwebassets\" />
+</StaticWebAssets>
