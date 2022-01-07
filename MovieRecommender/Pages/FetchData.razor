@@ -1,5 +1,4 @@
 ﻿@page "/fetchdata"
-@using Movies.Core.Model
 @using Blazored.Typeahead
 @using Syncfusion.Blazor.Buttons
 @using Syncfusion.Blazor.Lists
@@ -125,91 +124,9 @@
     {
         return await Task.FromResult(movies.Where(x => x.Title.ToLower().StartsWith(movieName.ToLower())).ToList());
     }
-    List<MoviesModel> FilteredImages => movies.Where(
-    img => img.Title.ToLower().StartsWith(SearchText.ToLower())).ToList();
 
 
 
-
-
-    void ReturnRowData(MoviesModel movie)
-    {
-        Console.WriteLine("EASIOFHNSAIODVBSIJBVNJIS");
-    }
-
-
-    private List<MoviesModel> RecommendMovies(MoviesModel selectedMovie)
-    {
-        VisibleProperty = false;
-
-
-        var cosine = new Cosine(4);
-        string recommendation = null;
-        OrderedRecommendations.Clear();
-        Recommendations.Clear();
-        StateHasChanged();
-
-        var selected = selectedMovie.Title.ToString();
-        foreach (var actor in selectedMovie.Cast)
-        {
-            selected += actor.ToString();
-        }
-        foreach (var director in selectedMovie.Directors)
-        {
-            selected += director.ToString();
-        }
-        foreach (var genre in selectedMovie.Genres)
-        {
-            selected += genre.ToString();
-        }
-
-        foreach (var movie in movies)
-        {
-            recommendation = selectedMovie.Title.ToString();
-            if (movie.Cast != null)
-            {
-                foreach (var actor in movie.Cast)
-                {
-                    recommendation += actor.ToString();
-                }
-            }
-
-            if (movie.Directors != null)
-            {
-                foreach (var director in movie.Directors)
-                {
-                    recommendation += director.ToString();
-                }
-            }
-
-            if (movie.Genres != null)
-            {
-                foreach (var genre in movie.Genres)
-                {
-                    recommendation += genre.ToString();
-                }
-            }
-
-
-            var result = 1 - cosine.Similarity(selected, recommendation);
-            movie.Similarity = result;
-            if(movie.Similarity!=0)
-                {
-                    Recommendations.Add(movie);
-                }
-
-            recommendation = "";
-
-        }
-
-
-        OrderedRecommendations = Recommendations.OrderBy(o => o.Similarity).ToList();
-        StateHasChanged();
-
-
-        return OrderedRecommendations;
-
-    }
 
 
 
