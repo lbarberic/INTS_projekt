@@ -8,7 +8,8 @@ namespace Movies.Core.Models
 {
     public class MovieRatingPredictionModel
     {
-        public float Label;
+        public bool PredictedLabel;
+
         public float Score;
     }
 }

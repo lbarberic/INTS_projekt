@@ -9,8 +9,8 @@ namespace Movies.Core.Models
 {
     public class MovieRatingModel
     {
-        [LoadColumn(0)] public float userId;
-        [LoadColumn(1)] public float movieId;
-        [LoadColumn(2)] public float Label;
+        [LoadColumn(0)] public string userId;
+        [LoadColumn(1)] public string movieId;
+        [LoadColumn(2)] public bool Label;
     }
 }

@@ -1,107 +1,150 @@
-﻿using Microsoft.ML;
-using Microsoft.ML.Trainers;
-using MongoDB.Driver;
-using Movies.Core.Models;
-using System;
-using System.Collections.Generic;
+﻿using System;
+using Microsoft.ML;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
+using Microsoft.ML.Data;
+using System.Drawing;
+using System.Diagnostics;
+using Movies.Core.Models;
 
 namespace Movies.Core
 {
     public class MoviesService
     {
-        private static string trainingDataPath = Path.Combine(Environment.CurrentDirectory, @"Data\recommendation-ratings-train.csv");
-        private static string testDataPath = Path.Combine(Environment.CurrentDirectory, @"Data\recommendation-ratings-test.csv");
-        private static string moviesPath = Path.Combine(Environment.CurrentDirectory, @"Data\movie.csv");
-        private static List<MovieModel> All = new List<MovieModel>();
+        private static string BaseModelRelativePath = @"../../../Model";
+        private static string ModelRelativePath = $"{BaseModelRelativePath}/model.zip";
+
+        private static string BaseDataSetRelativepath = @"../../../Data";
+        private static string TrainingDataRelativePath = $"{BaseDataSetRelativepath}/ratings_train.csv";
+        private static string TestDataRelativePath = $"{BaseDataSetRelativepath}/ratings_test.csv";
+
+        private static string TrainingDataLocation = GetAbsolutePath(TrainingDataRelativePath);
+        private static string TestDataLocation = GetAbsolutePath(TestDataRelativePath);
+        private static string ModelPath = GetAbsolutePath(ModelRelativePath);
 
         static void Main(string[] args)
         {
-            StreamReader reader = new StreamReader(File.OpenRead(moviesPath));
+            Color color = Color.FromArgb(130, 150, 115);
 
-            reader.ReadLine();
-            int counter = 2;
+            //Call the following piece of code for splitting the ratings.csv into ratings_train.csv and ratings.test.csv.
+            //MoviesService.DataPrep();
 
-            while (!reader.EndOfStream)
-            {
-                var line = reader.ReadLine();
-                var values = line.Split(',');
+            //STEP 1: Create MLContext to be shared across the model creation workflow objects
+            MLContext mlContext = new MLContext();
 
-                var nesta = new MovieModel
-                {
-                    Id = Int32.Parse(values[0]),
-                    Title = values[1]
-                };
+            //STEP 2: Read data from text file using TextLoader by defining the schema for reading the movie recommendation datasets and return dataview.
+            var trainingDataView = mlContext.Data.LoadFromTextFile<MovieRatingModel>(path: TrainingDataLocation, hasHeader: true, separatorChar: ',');
 
-                All.Add(nesta);
-            }
-            var mlContext = new MLContext();
-
-
-            var trainingDataView = mlContext.Data.LoadFromTextFile<MovieRatingModel>(trainingDataPath, hasHeader: true, separatorChar: ',');
-            var testDataView = mlContext.Data.LoadFromTextFile<MovieRatingModel>(testDataPath, hasHeader: true, separatorChar: ',');
-
-            var options = new MatrixFactorizationTrainer.Options
-            {
-                MatrixColumnIndexColumnName = "userIdEncoded",
-                MatrixRowIndexColumnName = "movieIdEncoded",
-                LabelColumnName = "Label",
-                NumberOfIterations = 100000,
-                ApproximationRank = 512,
-                Lambda = 0.81,
-                LearningRate = 0.000196
-            };
-
-            var pipeline = mlContext.Transforms.Conversion.MapValueToKey(
-                    inputColumnName: "userId",
-                    outputColumnName: "userIdEncoded")
-                .Append(mlContext.Transforms.Conversion.MapValueToKey(
-                    inputColumnName: "movieId",
-                    outputColumnName: "movieIdEncoded"));
-
-
-            var trainingDataEstimator = pipeline.Append(mlContext.Recommendation().Trainers.MatrixFactorization(options));
-
-            Console.WriteLine("Training the model...");
-            var model = trainingDataEstimator.Fit(trainingDataView);
+            Console.WriteLine("=============== Reading Input Files ===============", color);
             Console.WriteLine();
 
-            Console.WriteLine("=============== Evaluating the model ===============");
+            // ML.NET doesn't cache data set by default. Therefore, if one reads a data set from a file and accesses it many times, it can be slow due to
+            // expensive featurization and disk operations. When the considered data can fit into memory, a solution is to cache the data in memory. Caching is especially
+            // helpful when working with iterative algorithms which needs many data passes. Since SDCA is the case, we cache. Inserting a
+            // cache step in a pipeline is also possible, please see the construction of pipeline below.
+            trainingDataView = mlContext.Data.Cache(trainingDataView);
+
+            Console.WriteLine("=============== Transform Data And Preview ===============", color);
+            Console.WriteLine();
+
+            //STEP 4: Transform your data by encoding the two features userId and movieID.
+            //        These encoded features will be provided as input to FieldAwareFactorizationMachine learner
+            var dataProcessPipeline = mlContext.Transforms.Text.FeaturizeText(outputColumnName: "userIdFeaturized", inputColumnName: nameof(MovieRatingModel.userId))
+                                          .Append(mlContext.Transforms.Text.FeaturizeText(outputColumnName: "movieIdFeaturized", inputColumnName: nameof(MovieRatingModel.movieId))
+                                          .Append(mlContext.Transforms.Concatenate("Features", "userIdFeaturized", "movieIdFeaturized")));
+            Common.ConsoleHelper.PeekDataViewInConsole(mlContext, trainingDataView, dataProcessPipeline, 10);
+
+            // STEP 5: Train the model fitting to the DataSet
+            Console.WriteLine("=============== Training the model ===============", color);
+            Console.WriteLine();
+            var trainingPipeLine = dataProcessPipeline.Append(mlContext.BinaryClassification.Trainers.FieldAwareFactorizationMachine(new string[] { "Features" }));
+            var model = trainingPipeLine.Fit(trainingDataView);
+
+            //STEP 6: Evaluate the model performance
+            Console.WriteLine("=============== Evaluating the model ===============", color);
+            Console.WriteLine();
+            var testDataView = mlContext.Data.LoadFromTextFile<MovieRatingModel>(path: TestDataLocation, hasHeader: true, separatorChar: ',');
+
             var prediction = model.Transform(testDataView);
-            var metrics = mlContext.Regression.Evaluate(prediction, labelColumnName: "Label", scoreColumnName: "Score");
 
-            Console.WriteLine("Root Mean Squared Error : " + metrics.RootMeanSquaredError.ToString());
-            Console.WriteLine("RSquared: " + metrics.RSquared.ToString());
-            Console.WriteLine("RSquared: " + metrics.LossFunction.ToString());
-            Console.WriteLine("RSquared: " + metrics.MeanSquaredError.ToString());
-            Console.WriteLine("RSquared: " + metrics.MeanAbsoluteError.ToString());
+            var metrics = mlContext.BinaryClassification.Evaluate(data: prediction, labelColumnName: "Label", scoreColumnName: "Score", predictedLabelColumnName: "PredictedLabel");
+            Console.WriteLine("Evaluation Metrics: acc:" + Math.Round(metrics.Accuracy, 2) + " AreaUnderRocCurve(AUC):" + Math.Round(metrics.AreaUnderRocCurve, 2), color);
+
+            //STEP 7:  Try/test a single prediction by predicting a single movie rating for a specific user
+            Console.WriteLine("=============== Test a single prediction ===============", color);
+            Console.WriteLine();
+            var predictionEngine = mlContext.Model.CreatePredictionEngine<MovieRatingModel, MovieRatingPredictionModel>(model);
+            MovieRatingModel testData = new MovieRatingModel() { userId = "138494", movieId = "89745" };
+
+            var movieRatingPrediction = predictionEngine.Predict(testData);
+            Console.WriteLine($"UserId:{testData.userId} with movieId: {testData.movieId} Score:{Sigmoid(movieRatingPrediction.Score)} and Label {movieRatingPrediction.PredictedLabel}", Color.YellowGreen);
             Console.WriteLine();
 
-            var predictionEngine = mlContext.Model.CreatePredictionEngine<MovieRatingModel, MovieRatingPredictionModel>(model);
-            Console.WriteLine("Calculating the top 5 movies for user 611...");
-            var top5 = (from m in All
-                        let p = predictionEngine.Predict(
-                           new MovieRatingModel()
-                           {
-                               userId = 611,
-                               movieId = m.Id
-                           })
-                        orderby p.Score descending
-                        select (MovieId: m.Id, Score: p.Score)).Take(5);
+            //STEP 8:  Save model to disk
+            Console.WriteLine("=============== Writing model to the disk ===============", color);
+            Console.WriteLine(); mlContext.Model.Save(model, trainingDataView.Schema, ModelPath);
 
-            foreach (var t in top5)
-                Console.WriteLine($"  Score:{t.Score}\tMovie: {Dohvati(t.MovieId)?.Title}");
+            Console.WriteLine("=============== Re-Loading model from the disk ===============", color);
+            Console.WriteLine();
+            ITransformer trainedModel;
+            using (FileStream stream = new FileStream(ModelPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                trainedModel = mlContext.Model.Load(stream, out var modelInputSchema);
+            }
 
-
-
+            Console.WriteLine("Press any key ...");
+            Console.Read();
         }
 
-        public static MovieModel Dohvati(int id)
+        /*
+         * FieldAwareFactorizationMachine the learner used in this example requires the problem to setup as a binary classification problem.
+         * The DataPrep method performs two tasks:
+         * 1. It goes through all the ratings and replaces the ratings > 3 as 1, suggesting a movie is recommended and ratings < 3 as 0, suggesting
+              a movie is not recommended
+           2. This piece of code also splits the ratings.csv into rating-train.csv and ratings-test.csv used for model training and testing respectively.
+         */
+        public static void DataPrep()
         {
-            return All.Single(m => m.Id == id);
+
+            string[] dataset = File.ReadAllLines(@".\Data\rating.csv");
+
+            string[] new_dataset = new string[dataset.Length];
+            new_dataset[0] = dataset[0];
+            for (int i = 1; i < dataset.Length; i++)
+            {
+                string line = dataset[i];
+                string[] lineSplit = line.Split(',');
+                double rating = Double.Parse(lineSplit[2]);
+                rating = rating > 3 ? 1 : 0;
+                lineSplit[2] = rating.ToString();
+                string new_line = string.Join(',', lineSplit);
+                new_dataset[i] = new_line;
+            }
+            dataset = new_dataset;
+            int numLines = dataset.Length;
+            var body = dataset.Skip(1);
+            var sorted = body.Select(line => new { SortKey = DateTime.Parse(line.Split(',')[3]), Line = line })
+                             .OrderBy(x => x.SortKey)
+                             .Select(x => x.Line);
+            File.WriteAllLines(@"../../../Data\ratings_train.csv", dataset.Take(1).Concat(sorted.Take((int)(numLines * 0.9))));
+            File.WriteAllLines(@"../../../Data\ratings_test.csv", dataset.Take(1).Concat(sorted.TakeLast((int)(numLines * 0.1))));
+        }
+
+        public static float Sigmoid(float x)
+        {
+            return (float)(100 / (1 + Math.Exp(-x)));
+        }
+
+        public static string GetAbsolutePath(string relativeDatasetPath)
+        {
+            FileInfo _dataRoot = new FileInfo(typeof(MoviesService).Assembly.Location);
+            string assemblyFolderPath = _dataRoot.Directory.FullName;
+
+            string fullPath = Path.Combine(assemblyFolderPath, relativeDatasetPath);
+
+            return fullPath;
         }
     }
 }
+
 
