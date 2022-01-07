@@ -1,0 +1,135 @@
+﻿@page "/fetchdata"
+@using Blazored.Typeahead
+@using Syncfusion.Blazor.Buttons
+@using Syncfusion.Blazor.Lists
+@using F23.StringSimilarity
+@using Syncfusion.Blazor.Spinner
+@using Syncfusion.Blazor.Grids
+@inject IJSRuntime Runtime
+@inject HttpClient Http
+
+<h1>Movie recommender</h1>
+
+<p>This component demonstrates fetching data from the server.</p>
+
+
+
+<div hidden="@Hidden">
+    <p><em> Loading data... </em></p>
+</div>
+<div hidden="@MoviesLoaded">
+    <BlazoredTypeahead SearchMethod="SearchMovies" @bind-Value="SelectedMovie">
+        <SelectedTemplate>@context.Title</SelectedTemplate>
+        <ResultTemplate>@context.Title</ResultTemplate>
+    </BlazoredTypeahead>
+    @if (SelectedMovie != null)
+    {
+        <p>Selected movie: @SelectedMovie.Title</p>
+    }
+
+    <SfButton @onclick="()=> {RecommendMovies(SelectedMovie);}" CssClass="e-info"> Recommend movies </SfButton>
+
+
+    @if (!OrderedRecommendations.Any())
+    {
+        <div hidden="@VisibleProperty">
+            <p><em> Getting recomendations </em></p>
+        </div>
+
+    }
+    else
+    {
+        <Syncfusion.Blazor.Grids.SfGrid DataSource="@OrderedRecommendations" AllowPaging="true">
+            <Syncfusion.Blazor.Grids.GridPageSettings PageSize="15"></Syncfusion.Blazor.Grids.GridPageSettings>
+            <Syncfusion.Blazor.Grids.GridColumns>
+                <GridColumn HeaderText="Movie image" TextAlign="TextAlign.Center" Width="120">
+                    <Template>
+                        @{
+                            var movie = (context as MoviesModel);
+                            <div class="image">
+                                <img src="@movie.Poster" alt="@movie.Poster" style='height: 100%; width: 100%; object-fit: contain' />
+                            </div>
+                        }
+                    </Template>
+                </GridColumn>
+                <Syncfusion.Blazor.Grids.GridColumn Field="@nameof(MoviesModel.Title)" HeaderText="Title" TextAlign="TextAlign.Center" AutoFit="true"></Syncfusion.Blazor.Grids.GridColumn>
+                <Syncfusion.Blazor.Grids.GridColumn Field="@nameof(MoviesModel.Year)" HeaderText="Year" AutoFit="true"></Syncfusion.Blazor.Grids.GridColumn>
+                <GridColumn HeaderText="Actors" AutoFit="true" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var cast = (context as MoviesModel);
+                            if (cast.Cast != null)
+                            {
+                                foreach (var actor in cast.Cast)
+                                {
+
+                                    if (actor != null)
+                                    {
+                                        <div class=" text-info">
+                                            <p>@actor</p>
+                                        </div>
+                                    }
+
+                                }
+                            }
+
+                        }
+                    </Template>
+                </GridColumn>
+                <GridColumn HeaderText="Genres" AutoFit="true" TextAlign="TextAlign.Center">
+                    <Template>
+                        @{
+                            var genre = (context as MoviesModel);
+                            if (genre.Genres.Any())
+                            {
+                                foreach (var gen in genre.Genres)
+                                {
+                                    <div class=" text-black-50">
+                                        <p>@gen</p>
+                                    </div>
+                                }
+                            }
+
+                        }
+                    </Template>
+                </GridColumn>
+            </Syncfusion.Blazor.Grids.GridColumns>
+        </Syncfusion.Blazor.Grids.SfGrid>
+    }
+</div>
+
+
+@code {
+    SfButton ToggleBtn;
+    SfGrid<MoviesModel> Grid { get; set; }
+    private List<MoviesModel> movies = new List<MoviesModel>();
+    private string SearchText = "";
+    MoviesModel SelectedMovie { get; set; } = new MoviesModel();
+    private List<MoviesModel> Recommendations = new List<MoviesModel>();
+    private List<MoviesModel> OrderedRecommendations = new List<MoviesModel>();
+    bool VisibleProperty = true;
+    bool MoviesLoaded = true;
+    bool Hidden = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        movies = await Http.GetFromJsonAsync<List<MoviesModel>>("api/Movies/GetAllMovies");
+        MoviesLoaded = false;
+        Hidden = true;
+    }
+
+
+
+    private async Task<IEnumerable<MoviesModel>> SearchMovies(string movieName)
+    {
+        return await Task.FromResult(movies.Where(x => x.Title.ToLower().StartsWith(movieName.ToLower())).ToList());
+    }
+
+
+
+
+
+
+}
+
+
